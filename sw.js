@@ -1,5 +1,5 @@
 /* Cue service worker — offline app shell */
-const CACHE = 'cue-v2';
+const CACHE = 'cue-v3';
 const SHELL = [
   './',
   './index.html',

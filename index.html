@@ -208,6 +208,33 @@
   .mirrorV #stage{transform:scaleY(-1)}
   .mirrorH.mirrorV #stage{transform:scale(-1,-1)}
 
+  /* ---------- camera mode: script top half, front camera below ---------- */
+  #camPanel{position:absolute;left:0;right:0;top:50%;bottom:0;display:none;background:#000;z-index:1;overflow:hidden}
+  .camOn #camPanel{display:block}
+  .camOn #stage{bottom:50%}
+  #camView{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+  #camSeam{position:absolute;left:0;right:0;top:50%;height:1px;background:var(--line-strong);z-index:2;display:none}
+  .camOn #camSeam{display:block}
+  .camOn #playBtn{
+    background:linear-gradient(180deg,#ff7377,#e5484d 45%,#a91f26);
+    box-shadow:0 1px 0 rgba(255,255,255,.28) inset, 0 -14px 20px rgba(80,10,12,.35) inset,
+               0 14px 40px -8px rgba(229,72,77,.45), 0 4px 14px -2px rgba(0,0,0,.65);
+    color:#fff;
+  }
+  #playBtn .recdot,#playBtn .recstop{display:none}
+  #screen-prompt.camOn #playBtn .play,#screen-prompt.camOn #playBtn .pause{display:none}
+  #screen-prompt.camOn #playBtn .recdot{display:block}
+  #screen-prompt.camOn #playBtn.playing .recdot{display:none}
+  #screen-prompt.camOn #playBtn.playing .recstop{display:block}
+  #clock.rec{color:#ff8a8d;border-color:rgba(229,72,77,.45)}
+  #clock.rec::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:#e5484d;margin-right:6px;animation:blink 1.1s ease-in-out infinite}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+  #camBtn.on{color:var(--butter);border-color:rgba(243,211,124,.4)}
+  .take-meta{margin:16px 0 4px;font-variant-numeric:tabular-nums;font-size:34px;font-weight:800;letter-spacing:-.02em;color:var(--butter)}
+  .take-meta small{display:block;font-size:11px;font-weight:800;letter-spacing:.16em;color:var(--ink-faint);margin-top:5px;text-transform:uppercase}
+  .panel .btn-text{margin-top:14px;font-size:13px;font-weight:600;color:var(--ink-faint);padding:6px 10px}
+  @media(hover:hover){.panel .btn-text:hover{color:#ff8a8d}}
+
   #focusGuide{position:absolute;left:0;right:0;top:38%;z-index:2;pointer-events:none;opacity:1;transition:opacity .3s var(--ease-out)}
   #focusGuide .tick{position:absolute;top:0;width:17px;height:4px;border-radius:3px;background:var(--butter);box-shadow:0 0 14px var(--butter-glow)}
   #focusGuide .tick.l{left:8px}
@@ -413,6 +440,8 @@
     </div>
     <div id="focusGuide"><div class="tick l"></div><div class="tick r"></div></div>
   </div>
+  <div id="camPanel"><video id="camView" autoplay playsinline muted></video></div>
+  <div id="camSeam"></div>
   <div id="progressTrack"><div id="progressBar"></div></div>
 
   <div class="chrome" id="promptTop">
@@ -420,6 +449,9 @@
       <svg viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7"/></svg>
     </button>
     <div id="promptTitle"></div>
+    <button class="iconbtn" id="camBtn" aria-label="Camera mode">
+      <svg viewBox="0 0 24 24"><path d="M3 8a2 2 0 012-2h9a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2zM16 10.5l5-3v9l-5-3"/></svg>
+    </button>
     <div id="clock">0:00</div>
   </div>
 
@@ -432,9 +464,11 @@
     </div>
     <div id="controlRow">
       <button id="modeBtn" aria-label="Switch follow mode"><span class="ind"></span><span id="modeLabel">Voice</span></button>
-      <button id="playBtn" aria-label="Play or pause">
+      <button id="playBtn" aria-label="Play, pause, or record">
         <svg class="play" viewBox="0 0 24 24"><path d="M8 5.2v13.6L20 12z"/></svg>
         <svg class="pause" viewBox="0 0 24 24"><path d="M7 5h3.4v14H7zM13.6 5H17v14h-3.4z"/></svg>
+        <svg class="recdot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/></svg>
+        <svg class="recstop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg>
       </button>
       <button id="fontBtn" class="btn-ghost" aria-label="Text size and settings"><span>A<b>a</b> · Settings</span></button>
     </div>
@@ -453,6 +487,19 @@
       <h2>Cue reads with you.</h2>
       <p>As you speak, the script scrolls itself and keeps your place — even if you pause or stumble. Allow the <b style="color:var(--ink)">microphone</b> when your phone asks.</p>
       <button class="btn-primary" id="micOkBtn">Got it</button>
+    </div>
+  </div>
+
+  <!-- take saved -->
+  <div class="overlay" id="takeOverlay">
+    <div class="panel">
+      <h2>Take captured.</h2>
+      <div class="take-meta"><span id="takeTime">0:00</span><small id="takeSize">— MB</small></div>
+      <button class="btn-primary" id="takeShareBtn">Save to Photos / Share</button>
+      <button class="btn-ghost" id="takeDownloadBtn" style="margin-top:10px;width:100%">Download file</button>
+      <button class="btn-ghost" id="takeAgainBtn" style="margin-top:10px;width:100%">Record again from the top</button>
+      <button class="btn-text" id="takeDiscardBtn">Discard take</button>
+      <div class="credit">Cue <b>by NIOS Media.</b></div>
     </div>
   </div>
 
@@ -551,7 +598,7 @@ const DB = {
 let scripts = DB.load('cue.scripts', null);
 const settings = Object.assign({
   fontSize:44, lineHeight:1.5, margin:7, mirrorH:false, mirrorV:false,
-  guide:true, countdown:true, mode:'voice', speed:52, lang:'en-US'
+  guide:true, countdown:true, mode:'voice', speed:52, lang:'en-US', camera:false
 }, DB.load('cue.settings', {}));
 const saveSettings = () => DB.save('cue.settings', settings);
 const saveScripts  = () => DB.save('cue.scripts', scripts);
@@ -719,6 +766,8 @@ function openPrompter(id){
   paintWords();
   updateModeUI();
   wakeOn();
+  if (settings.camera && camSupported()) enableCamera();
+  else updateCamUI();
 }
 
 function applyPrompterStyle(){
@@ -833,9 +882,11 @@ function stopTick(){ clearInterval(tickT); tickT = null; }
 
 $('playBtn').addEventListener('click', ()=>{
   if (finished){ restart(); return; }
-  if (playing){ setPlaying(false); }
-  else {
-    if (mode==='voice' && !DB.load('cue.michint', false) && speechSupported()){
+  if (playing){
+    if (recording) stopTake();
+    else setPlaying(false);
+  } else {
+    if (mode==='voice' && !camOn && !DB.load('cue.michint', false) && speechSupported()){
       $('micOverlay').classList.add('show');
       return;
     }
@@ -863,6 +914,7 @@ function beginWithCountdown(){
   ov.onclick = ()=>{ clearTimeout(countT); ov.classList.remove('show'); engage(); };
 }
 function engage(){
+  if (camOn && !recording) startTake();
   setPlaying(true);
   syncScrollToPos();
   if (mode==='voice') startListening();
@@ -873,9 +925,14 @@ function finish(){
   if (finished) return;
   finished = true;
   closeSheet();
+  pos = words.length; paintWords();
+  if (recording){
+    // let the last word land on camera before cutting the take
+    setTimeout(()=>{ if (recording) stopTake(); }, 900);
+    return;
+  }
   setPlaying(false, true);
   stopListening();
-  pos = words.length; paintWords();
   $('doneTime').textContent = fmtTime(elapsed);
   $('doneWords').textContent = words.length + ' words delivered';
   $('doneOverlay').classList.add('show');
@@ -893,8 +950,14 @@ $('againBtn').addEventListener('click', ()=>{ restart(); beginWithCountdown(); }
 $('doneExitBtn').addEventListener('click', ()=>{ exitPrompter(); });
 $('promptBack').addEventListener('click', ()=>{ exitPrompter(); });
 function exitPrompter(){
+  if (recording){ stopTake(); return; } // first tap ends the take instead of losing it
+  if (takeBlob && $('takeOverlay').classList.contains('show')){
+    if (!confirm('Leave without keeping this take?')) return;
+  }
+  clearTake();
   setPlaying(false, true);
   stopListening();
+  disableCamera();
   wakeOff();
   $('doneOverlay').classList.remove('show');
   goHome();
@@ -971,9 +1034,11 @@ function updateModeUI(){
   $('modeBtn').classList.toggle('autoMode', mode!=='voice');
   $('speedRow').classList.toggle('show', mode==='auto');
   $('speedSlider').value = settings.speed;
-  $('hintNote').textContent = mode==='voice'
-    ? 'Tap any word to jump there · pinch to resize text'
-    : 'Drag to reposition · pinch to resize text';
+  $('hintNote').textContent = camOn
+    ? 'Tap ● to record — the script rolls with you'
+    : (mode==='voice'
+      ? 'Tap any word to jump there · pinch to resize text'
+      : 'Drag to reposition · pinch to resize text');
 }
 $('speedSlider').addEventListener('input', e=>{ settings.speed = +e.target.value; saveSettings(); });
 
@@ -1015,6 +1080,7 @@ async function primeMic(){
   }catch(e){ return false; }
 }
 function micFail(code){
+  if (recording){ toast('Voice follow dropped — auto-scrolling this take.', 2600); return; }
   const standalone = navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
   let msg = code === 'not-allowed'
     ? 'Microphone blocked — switching to Auto scroll. Allow it in Settings → Safari (or Cue) → Microphone, then tap Voice to retry.'
@@ -1178,6 +1244,130 @@ $('mirrorHBtn').addEventListener('click', ()=>{ settings.mirrorH=!settings.mirro
 $('mirrorVBtn').addEventListener('click', ()=>{ settings.mirrorV=!settings.mirrorV; applyPrompterStyle(); refreshMirrorBtns(); });
 
 /* ============================================================
+   CAMERA MODE + TAKE RECORDER
+   Script rides the top half; front camera lives below, so the
+   reading line sits right next to the lens for real eye contact.
+   ============================================================ */
+let camOn = false, camStream = null;
+let recorder = null, recording = false, takeParts = [], takeBlob = null, takeURL = null;
+const camSupported = () => !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+
+async function enableCamera(){
+  if (camOn) return;
+  if (!camSupported()){ toast('Camera isn’t available in this browser.'); return; }
+  try{
+    camStream = await navigator.mediaDevices.getUserMedia({
+      video:{ facingMode:'user', width:{ideal:1080}, height:{ideal:1920} },
+      audio:true
+    });
+  }catch(e){
+    settings.camera = false; saveSettings(); updateCamUI();
+    toast('Camera blocked — allow camera and microphone access to record takes.', 4200);
+    return;
+  }
+  micPrimed = true; // the camera grant covers the mic too
+  $('camView').srcObject = camStream;
+  camOn = true; settings.camera = true; saveSettings();
+  screens.prompt.classList.add('camOn');
+  updateCamUI();
+  requestAnimationFrame(()=>syncScrollToPos(true));
+}
+function disableCamera(){
+  if (recording) return;
+  camOn = false;
+  screens.prompt.classList.remove('camOn');
+  if (camStream){ camStream.getTracks().forEach(t=>t.stop()); camStream = null; }
+  $('camView').srcObject = null;
+  updateCamUI();
+  requestAnimationFrame(()=>syncScrollToPos(true));
+}
+function updateCamUI(){
+  $('camBtn').classList.toggle('on', camOn);
+  updateModeUI();
+}
+$('camBtn').addEventListener('click', ()=>{
+  if (recording){ toast('Finish the take first.'); return; }
+  if (playing) setPlaying(false);
+  if (camOn){ settings.camera = false; saveSettings(); disableCamera(); }
+  else enableCamera();
+});
+
+function pickMime(){
+  if (!window.MediaRecorder) return null;
+  const cands = ['video/mp4;codecs=avc1','video/mp4','video/webm;codecs=vp9,opus','video/webm'];
+  const hit = cands.find(t=>{ try{ return MediaRecorder.isTypeSupported(t); }catch(e){ return false; } });
+  return hit === undefined ? '' : hit;
+}
+function startTake(){
+  if (!camStream || recording) return false;
+  const mime = pickMime();
+  if (mime === null){ toast('Recording isn’t supported here — prompting without capture.'); return false; }
+  takeParts = [];
+  try{ recorder = new MediaRecorder(camStream, mime ? { mimeType: mime } : undefined); }
+  catch(e){
+    try{ recorder = new MediaRecorder(camStream); }
+    catch(e2){ toast('Recording isn’t supported here — prompting without capture.'); return false; }
+  }
+  recorder.ondataavailable = e=>{ if (e.data && e.data.size) takeParts.push(e.data); };
+  recorder.onstop = onTakeReady;
+  recorder.start(1000);
+  recording = true;
+  elapsed = 0; $('clock').textContent = '0:00';
+  $('clock').classList.add('rec');
+  return true;
+}
+function stopTake(){
+  if (!recording) return;
+  recording = false;
+  $('clock').classList.remove('rec');
+  if (playing) setPlaying(false, true);
+  stopListening();
+  try{ recorder.stop(); }catch(e){ onTakeReady(); }
+}
+function onTakeReady(){
+  if (takeURL){ URL.revokeObjectURL(takeURL); takeURL = null; }
+  if (!takeParts.length){ toast('No footage captured on that take.'); return; }
+  takeBlob = new Blob(takeParts, { type: (recorder && recorder.mimeType) || 'video/webm' });
+  takeParts = [];
+  takeURL = URL.createObjectURL(takeBlob);
+  $('takeTime').textContent = fmtTime(elapsed);
+  $('takeSize').textContent = (takeBlob.size/1048576).toFixed(1) + ' MB';
+  let canShare = false;
+  try{ canShare = !!(navigator.canShare && navigator.canShare({ files:[takeFile()] })); }catch(e){}
+  $('takeShareBtn').style.display = canShare ? '' : 'none';
+  $('takeOverlay').classList.add('show');
+}
+function takeName(){
+  const s = scripts.find(x=>x.id===currentId);
+  const slug = ((s && s.title) || 'take').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40) || 'take';
+  const ext = takeBlob && takeBlob.type.includes('mp4') ? 'mp4' : 'webm';
+  const d = new Date(), pad = n=>String(n).padStart(2,'0');
+  return `cue-${slug}-${pad(d.getHours())}${pad(d.getMinutes())}.${ext}`;
+}
+function takeFile(){ return new File([takeBlob], takeName(), { type: takeBlob.type }); }
+function clearTake(){
+  $('takeOverlay').classList.remove('show');
+  if (takeURL){ URL.revokeObjectURL(takeURL); takeURL = null; }
+  takeBlob = null;
+}
+$('takeShareBtn').addEventListener('click', ()=>{
+  if (!takeBlob) return;
+  navigator.share({ files:[takeFile()] }).catch(()=>{});
+});
+$('takeDownloadBtn').addEventListener('click', ()=>{
+  if (!takeBlob || !takeURL) return;
+  const a = document.createElement('a');
+  a.href = takeURL; a.download = takeName();
+  document.body.appendChild(a); a.click(); a.remove();
+  toast('Downloading take…', 1800);
+});
+$('takeAgainBtn').addEventListener('click', ()=>{ clearTake(); restart(); beginWithCountdown(); });
+$('takeDiscardBtn').addEventListener('click', ()=>{
+  if (!confirm('Discard this take? It can’t be recovered.')) return;
+  clearTake(); restart();
+});
+
+/* ============================================================
    WAKE LOCK + PWA
    ============================================================ */
 let wakeLock = null, wantWake = false;
@@ -1192,7 +1382,10 @@ function wakeOff(){
 }
 document.addEventListener('visibilitychange', ()=>{
   if (document.visibilityState==='visible' && wantWake) wakeOn();
-  if (document.visibilityState==='hidden' && playing){ setPlaying(false); stopListening(); }
+  if (document.visibilityState==='hidden'){
+    if (recording) stopTake();
+    else if (playing){ setPlaying(false); stopListening(); }
+  }
 });
 
 if ('serviceWorker' in navigator && location.protocol!=='file:'){
@@ -1208,8 +1401,15 @@ function activeName(){
 function route(){
   const m = location.hash.match(/^#(s|p)\/(.+)$/);
   const cur = activeName();
+  const leavingPrompt = cur==='prompt' && !(m && m[1]==='p' && m[2]===currentId);
+  if (leavingPrompt && recording){
+    // hardware back mid-take: end the take, stay on the prompter
+    stopTake();
+    location.hash = 'p/' + currentId;
+    return;
+  }
   if (!m || !scripts.find(x=>x.id===m[2])){
-    if (cur==='prompt'){ setPlaying(false, true); stopListening(); wakeOff(); $('doneOverlay').classList.remove('show'); }
+    if (cur==='prompt'){ setPlaying(false, true); stopListening(); disableCamera(); clearTake(); wakeOff(); $('doneOverlay').classList.remove('show'); }
     if (cur==='edit') persistEditor();
     if (cur!=='home') show('home');
     return;
@@ -1217,7 +1417,7 @@ function route(){
   const kind = m[1], id = m[2];
   if (kind==='s'){
     if (cur==='edit' && currentId===id) return;
-    if (cur==='prompt'){ setPlaying(false, true); stopListening(); wakeOff(); }
+    if (cur==='prompt'){ setPlaying(false, true); stopListening(); disableCamera(); clearTake(); wakeOff(); }
     openEditor(id);
   } else {
     if (cur==='prompt' && currentId===id) return;
