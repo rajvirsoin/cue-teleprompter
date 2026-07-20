@@ -573,7 +573,7 @@
         <option value="ar-SA">العربية</option>
       </select>
     </div>
-    <p class="sheet-note">Mirror flips the text for beam-splitter teleprompter glass. Voice follow listens on-device through your phone’s speech engine — nothing is stored. <span style="color:var(--butter)">Cue v8<span id="camDiag"></span></span></p>
+    <p class="sheet-note">Mirror flips the text for beam-splitter teleprompter glass. Voice follow listens on-device through your phone’s speech engine — nothing is stored. <span style="color:var(--butter)">Cue v9<span id="camDiag"></span></span></p>
   </div>
 </div>
 
@@ -585,7 +585,7 @@
    Cue — a teleprompter that listens.
    Voice-follow engine + auto-scroll fallback. No dependencies.
    ============================================================ */
-const APP_VERSION = 8;
+const APP_VERSION = 9;
 
 /* ---------- tiny helpers ---------- */
 const $ = id => document.getElementById(id);
@@ -1276,34 +1276,61 @@ const camSupported = () => !!(navigator.mediaDevices && navigator.mediaDevices.g
    first stream whose track is actually taller than wide; a landscape
    stream is kept only as a last resort (the recorder's portrait
    canvas crop still guarantees a portrait file). */
+/* Some iOS versions hand Home-Screen web apps a LANDSCAPE camera no
+   matter what portrait constraints ask for (Safari itself honors
+   them). The ladder below climbs from polite to forceful:
+   1) ideal full-FOV 4:3 portrait  2) flip the live track in place
+   3) exact native portrait modes (must be genuine — resizeMode none
+   forbids synthesized crops, which would just re-create the zoom)
+   4) full-sensor landscape + the recorder's portrait crop, with an
+   honest heads-up that the Home-Screen container is the blocker. */
+let camIsLandscape = false, camAdvised = false;
 async function acquirePortraitCamera(){
-  // 4:3 modes read the camera's FULL sensor; 16:9 presets are a cropped
-  // (often digitally zoomed) region — the "not the whole camera" look.
-  // So: full-FOV 4:3 portrait first, then 16:9 portrait shapes, then
-  // whatever the browser gives. Exclusive access per probe — cameras
-  // run one mode at a time and later opens inherit the running mode.
-  const attempts = [
-    { video:{ facingMode:'user', width:{ideal:1440}, height:{ideal:1920}, aspectRatio:{ideal:3/4} }, audio:true },
-    { video:{ facingMode:'user', width:{ideal:1080}, height:{ideal:1920} }, audio:true },
-    { video:{ facingMode:'user', width:{ideal:1920}, height:{ideal:1080} }, audio:true },
-    { video:{ facingMode:'user' }, audio:true },
-  ];
-  for (const c of attempts){
-    let s = null;
-    try{ s = await navigator.mediaDevices.getUserMedia(c); }catch(e){ continue; }
-    const st = (s.getVideoTracks()[0] && s.getVideoTracks()[0].getSettings()) || {};
-    if (st.height && st.width && st.height > st.width){
-      await resetZoom(s);
-      return s;
-    }
-    s.getTracks().forEach(t=>t.stop());
+  const open = async c => { try{ return await navigator.mediaDevices.getUserMedia(c); }catch(e){ return null; } };
+  const kill = s => { if (s) s.getTracks().forEach(t=>t.stop()); };
+  const isPortrait = s => {
+    const st = (s && s.getVideoTracks()[0] && s.getVideoTracks()[0].getSettings()) || {};
+    return !!(st.width && st.height && st.height > st.width);
+  };
+  camIsLandscape = false;
+
+  // 1 — ask nicely for the full-FOV 4:3 portrait mode
+  let s = await open({ video:{ facingMode:'user', width:{ideal:1440}, height:{ideal:1920}, aspectRatio:{ideal:3/4} }, audio:true });
+  if (s && isPortrait(s)){ await resetZoom(s); return s; }
+
+  // 2 — try flipping the live track in place
+  if (s){
+    try{
+      await s.getVideoTracks()[0].applyConstraints({ width:{ideal:1440}, height:{ideal:1920}, aspectRatio:{ideal:3/4} });
+      await new Promise(r=>setTimeout(r,350));
+      if (isPortrait(s)){ await resetZoom(s); return s; }
+    }catch(e){}
+    kill(s);
   }
-  // nothing portrait on this device — reopen the first workable mode
-  // and let the recorder's portrait canvas crop take care of the file
-  for (const c of attempts){
-    try{ const s = await navigator.mediaDevices.getUserMedia(c); await resetZoom(s); return s; }catch(e){}
+
+  // 3 — demand a genuinely native portrait mode, largest first
+  for (const [w,h] of [[1440,1920],[1080,1920],[960,1280],[720,1280]]){
+    const t = await open({ video:{ facingMode:'user', width:{exact:w}, height:{exact:h}, resizeMode:{exact:'none'} }, audio:true });
+    if (!t) continue;
+    if (isPortrait(t)){ await resetZoom(t); return t; }
+    kill(t);
   }
-  return null;
+
+  // 4 — this device won't shoot portrait for us: take the full-sensor
+  // landscape (4:3 keeps the most field of view) and crop in the recorder
+  camIsLandscape = true;
+  const fb = await open({ video:{ facingMode:'user', width:{ideal:1920}, height:{ideal:1440} }, audio:true })
+          || await open({ video:{ facingMode:'user' }, audio:true });
+  if (fb) await resetZoom(fb);
+  return fb;
+}
+function adviseLandscapeCam(){
+  if (!camIsLandscape || camAdvised) return;
+  camAdvised = true;
+  const standalone = navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+  toast(standalone
+    ? 'Your phone only gives Home-Screen apps a sideways camera, so takes crop in tighter than the native app. For the full portrait frame, run Cue in Safari itself (same address).'
+    : 'This browser only offers the camera in landscape, so takes crop in tighter than the native app.', 7000);
 }
 /* iOS 17+ can hand web apps a track with digital zoom pre-applied.
    If the track exposes a zoom range, force it to its minimum (≥1). */
@@ -1340,6 +1367,7 @@ async function enableCamera(){
   camOn = true;
   screens.prompt.classList.add('camOn');
   updateCamUI();
+  adviseLandscapeCam();
   requestAnimationFrame(()=>syncScrollToPos(true));
 }
 function disableCamera(){
