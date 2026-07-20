@@ -445,6 +445,7 @@
     <div id="focusGuide"><div class="tick l"></div><div class="tick r"></div></div>
   </div>
   <div id="camPanel"><video id="camView" autoplay playsinline muted></video></div>
+  <canvas id="recCanvas" style="position:absolute;left:-99999px;top:0;width:9px;height:16px" aria-hidden="true"></canvas>
   <div id="camSeam"></div>
   <div id="progressTrack"><div id="progressBar"></div></div>
 
@@ -1215,6 +1216,7 @@ window.__cue = {
   pause(){ setPlaying(false); },
   open(id){ openPrompter(id); },
   scripts(){ return scripts; },
+  get takeInfo(){ return takeBlob ? { size: takeBlob.size, type: takeBlob.type, url: takeURL } : null; },
   settings
 };
 
@@ -1308,15 +1310,50 @@ function pickMime(){
   const hit = cands.find(t=>{ try{ return MediaRecorder.isTypeSupported(t); }catch(e){ return false; } });
   return hit === undefined ? '' : hit;
 }
+/* Phones hand over the camera in the sensor's native (often landscape)
+   orientation, and MediaRecorder writes exactly that. So the take is
+   composed through a true portrait 9:16 canvas — center cover-crop of
+   whatever the camera delivers — and THAT is what gets recorded. */
+let drawRAF = 0, recStream = null;
+function buildPortraitStream(){
+  const v = $('camView');
+  if (!v.videoWidth || !v.videoHeight) return null;
+  const canvas = $('recCanvas');
+  const TH = Math.max(v.videoWidth, v.videoHeight) >= 1500 ? 1920 : 1280;
+  const TW = Math.round(TH * 9 / 16);
+  canvas.width = TW; canvas.height = TH;
+  const ctx = canvas.getContext('2d');
+  const draw = ()=>{
+    const vw = v.videoWidth, vh = v.videoHeight;   // re-read: rotation can change mid-take
+    if (vw && vh){
+      const scale = Math.max(TW/vw, TH/vh);
+      const sw = TW/scale, sh = TH/scale;
+      ctx.drawImage(v, (vw-sw)/2, (vh-sh)/2, sw, sh, 0, 0, TW, TH);
+    }
+    drawRAF = requestAnimationFrame(draw);
+  };
+  draw();
+  const canvasStream = canvas.captureStream(30);
+  recStream = new MediaStream([...canvasStream.getVideoTracks(), ...camStream.getAudioTracks()]);
+  return recStream;
+}
+function releasePortraitStream(){
+  cancelAnimationFrame(drawRAF); drawRAF = 0;
+  if (recStream){ recStream.getVideoTracks().forEach(t=>t.stop()); recStream = null; }
+}
 function startTake(){
   if (!camStream || recording) return false;
   const mime = pickMime();
   if (mime === null){ toast('Recording isn’t supported here — prompting without capture.'); return false; }
+  const src = buildPortraitStream();
+  if (!src){ toast('Camera is still warming up — give it a second and tap again.'); return false; }
   takeParts = [];
-  try{ recorder = new MediaRecorder(camStream, mime ? { mimeType: mime } : undefined); }
+  const opts = { videoBitsPerSecond: 8000000, audioBitsPerSecond: 128000 };
+  if (mime) opts.mimeType = mime;
+  try{ recorder = new MediaRecorder(src, opts); }
   catch(e){
-    try{ recorder = new MediaRecorder(camStream); }
-    catch(e2){ toast('Recording isn’t supported here — prompting without capture.'); return false; }
+    try{ recorder = new MediaRecorder(src); }
+    catch(e2){ releasePortraitStream(); toast('Recording isn’t supported here — prompting without capture.'); return false; }
   }
   recorder.ondataavailable = e=>{ if (e.data && e.data.size) takeParts.push(e.data); };
   recorder.onstop = onTakeReady;
@@ -1335,6 +1372,7 @@ function stopTake(){
   try{ recorder.stop(); }catch(e){ onTakeReady(); }
 }
 function onTakeReady(){
+  releasePortraitStream();
   if (takeURL){ URL.revokeObjectURL(takeURL); takeURL = null; }
   if (!takeParts.length){ toast('No footage captured on that take.'); return; }
   takeBlob = new Blob(takeParts, { type: (recorder && recorder.mimeType) || 'video/webm' });
