@@ -573,7 +573,7 @@
         <option value="ar-SA">العربية</option>
       </select>
     </div>
-    <p class="sheet-note">Mirror flips the text for beam-splitter teleprompter glass. Voice follow listens on-device through your phone’s speech engine — nothing is stored. <span style="color:var(--butter)">Cue v6</span></p>
+    <p class="sheet-note">Mirror flips the text for beam-splitter teleprompter glass. Voice follow listens on-device through your phone’s speech engine — nothing is stored. <span style="color:var(--butter)">Cue v7</span></p>
   </div>
 </div>
 
@@ -585,7 +585,7 @@
    Cue — a teleprompter that listens.
    Voice-follow engine + auto-scroll fallback. No dependencies.
    ============================================================ */
-const APP_VERSION = 6;
+const APP_VERSION = 7;
 
 /* ---------- tiny helpers ---------- */
 const $ = id => document.getElementById(id);
@@ -1268,15 +1268,40 @@ let camOn = false, camStream = null;
 let recorder = null, recording = false, takeParts = [], takeBlob = null, takeURL = null;
 const camSupported = () => !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
 
+/* Negotiate a NATIVE portrait camera track. iOS matches width/height
+   against the sensor's landscape orientation, so asking for portrait
+   dimensions can force a landscape mode — which then needs a heavy
+   crop (a big zoom-in). Try several constraint shapes and keep the
+   first stream whose track is actually taller than wide; a landscape
+   stream is kept only as a last resort (the recorder's portrait
+   canvas crop still guarantees a portrait file). */
+async function acquirePortraitCamera(){
+  const attempts = [
+    { video:{ facingMode:'user', width:{ideal:1080}, height:{ideal:1920} }, audio:true },
+    { video:{ facingMode:'user', width:{ideal:1920}, height:{ideal:1080} }, audio:true },
+    { video:{ facingMode:'user' }, audio:true },
+  ];
+  // Cameras only open in one mode at a time, so each probe must fully
+  // release the device before the next constraint shape is tried.
+  for (const c of attempts){
+    let s = null;
+    try{ s = await navigator.mediaDevices.getUserMedia(c); }catch(e){ continue; }
+    const st = (s.getVideoTracks()[0] && s.getVideoTracks()[0].getSettings()) || {};
+    if (st.height && st.width && st.height > st.width) return s; // native portrait — full sensor, no crop-zoom
+    s.getTracks().forEach(t=>t.stop());
+  }
+  // nothing portrait on this device — reopen the first workable mode
+  // and let the recorder's portrait canvas crop take care of the file
+  for (const c of attempts){
+    try{ return await navigator.mediaDevices.getUserMedia(c); }catch(e){}
+  }
+  return null;
+}
 async function enableCamera(){
   if (camOn) return;
   if (!camSupported()){ toast('Camera isn’t available in this browser.'); return; }
-  try{
-    camStream = await navigator.mediaDevices.getUserMedia({
-      video:{ facingMode:'user', width:{ideal:1080}, height:{ideal:1920} },
-      audio:true
-    });
-  }catch(e){
+  camStream = await acquirePortraitCamera();
+  if (!camStream){
     updateCamUI();
     toast('Camera blocked — allow camera and microphone access to record takes.', 4200);
     return;
