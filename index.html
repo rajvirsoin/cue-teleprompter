@@ -209,13 +209,16 @@
   .mirrorV #stage{transform:scaleY(-1)}
   .mirrorH.mirrorV #stage{transform:scale(-1,-1)}
 
-  /* ---------- camera mode: script top half, front camera below ---------- */
-  #camPanel{position:absolute;left:0;right:0;top:50%;bottom:0;display:none;background:#000;z-index:1;overflow:hidden}
+  /* ---------- camera mode: full-bleed camera, script overlaid on the
+     top half with a translucent black scrim so framing stays visible ---------- */
+  #camPanel{position:absolute;inset:0;display:none;background:#000;z-index:0;overflow:hidden}
   .camOn #camPanel{display:block}
-  .camOn #stage{bottom:50%}
+  .camOn #stage{
+    bottom:50%;z-index:1;
+    background:linear-gradient(180deg,rgba(10,10,11,.72) 0%,rgba(10,10,11,.64) 84%,rgba(10,10,11,0) 100%);
+  }
+  .camOn #scriptText{text-shadow:0 1px 12px rgba(0,0,0,.55)}
   #camView{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
-  #camSeam{position:absolute;left:0;right:0;top:50%;height:1px;background:var(--line-strong);z-index:2;display:none}
-  .camOn #camSeam{display:block}
   .camOn #playBtn{
     background:linear-gradient(180deg,#ff7377,#e5484d 45%,#a91f26);
     box-shadow:0 1px 0 rgba(255,255,255,.28) inset, 0 -14px 20px rgba(80,10,12,.35) inset,
@@ -446,7 +449,6 @@
   </div>
   <div id="camPanel"><video id="camView" autoplay playsinline muted></video></div>
   <canvas id="recCanvas" style="position:absolute;left:-99999px;top:0;width:9px;height:16px" aria-hidden="true"></canvas>
-  <div id="camSeam"></div>
   <div id="progressTrack"><div id="progressBar"></div></div>
 
   <div class="chrome" id="promptTop">
@@ -571,7 +573,7 @@
         <option value="ar-SA">العربية</option>
       </select>
     </div>
-    <p class="sheet-note">Mirror flips the text for beam-splitter teleprompter glass. Voice follow listens on-device through your phone’s speech engine — nothing is stored.</p>
+    <p class="sheet-note">Mirror flips the text for beam-splitter teleprompter glass. Voice follow listens on-device through your phone’s speech engine — nothing is stored. <span style="color:var(--butter)">Cue v6</span></p>
   </div>
 </div>
 
@@ -583,6 +585,7 @@
    Cue — a teleprompter that listens.
    Voice-follow engine + auto-scroll fallback. No dependencies.
    ============================================================ */
+const APP_VERSION = 6;
 
 /* ---------- tiny helpers ---------- */
 const $ = id => document.getElementById(id);
@@ -1217,6 +1220,7 @@ window.__cue = {
   open(id){ openPrompter(id); },
   scripts(){ return scripts; },
   get takeInfo(){ return takeBlob ? { size: takeBlob.size, type: takeBlob.type, url: takeURL } : null; },
+  version: APP_VERSION,
   settings
 };
 
@@ -1437,7 +1441,9 @@ document.addEventListener('visibilitychange', ()=>{
 });
 
 if ('serviceWorker' in navigator && location.protocol!=='file:'){
-  addEventListener('load', ()=>{ navigator.serviceWorker.register('./sw.js').catch(()=>{}); });
+  addEventListener('load', ()=>{
+    navigator.serviceWorker.register('./sw.js').then(reg=>reg.update()).catch(()=>{});
+  });
 }
 
 /* ---------- routing: boot + hardware back (hashchange) ---------- */
