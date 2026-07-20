@@ -183,6 +183,7 @@
   #editFoot .btn-primary{flex:1}
   #delBtn{color:var(--ink-faint)}
   @media(hover:hover){#delBtn:hover{color:var(--red);border-color:rgba(229,72,77,.4)}}
+  #editCamBtn{color:var(--butter);border-color:rgba(243,211,124,.3);background:rgba(243,211,124,.07)}
 
   /* ---------- prompter ---------- */
   #screen-prompt{background:var(--bg);z-index:5}
@@ -424,6 +425,9 @@
       <button class="iconbtn" id="delBtn" aria-label="Delete script">
         <svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg>
       </button>
+      <button class="iconbtn" id="editCamBtn" aria-label="Prompt and record with the camera" title="Prompt + record with camera">
+        <svg viewBox="0 0 24 24"><path d="M3 8a2 2 0 012-2h9a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2zM16 10.5l5-3v9l-5-3"/></svg>
+      </button>
       <button class="btn-primary" id="startBtn">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg>
         Start prompting
@@ -598,7 +602,7 @@ const DB = {
 let scripts = DB.load('cue.scripts', null);
 const settings = Object.assign({
   fontSize:44, lineHeight:1.5, margin:7, mirrorH:false, mirrorV:false,
-  guide:true, countdown:true, mode:'voice', speed:52, lang:'en-US', camera:false
+  guide:true, countdown:true, mode:'voice', speed:52, lang:'en-US'
 }, DB.load('cue.settings', {}));
 const saveSettings = () => DB.save('cue.settings', settings);
 const saveScripts  = () => DB.save('cue.scripts', scripts);
@@ -704,6 +708,11 @@ $('startBtn').addEventListener('click', ()=>{
   if (!$('bodyInput').value.trim()){ toast('Write something first — the prompter needs a script.'); return; }
   openPrompter(currentId);
 });
+$('editCamBtn').addEventListener('click', ()=>{
+  persistEditor();
+  if (!$('bodyInput').value.trim()){ toast('Write something first — the prompter needs a script.'); return; }
+  openPrompter(currentId, true);
+});
 
 /* ============================================================
    PROMPTER
@@ -730,7 +739,7 @@ function wordsMatch(a,b){
   return false;
 }
 
-function openPrompter(id){
+function openPrompter(id, withCam){
   currentId = id;
   const s = scripts.find(x=>x.id===id); if (!s) return goHome();
   $('promptTitle').textContent = s.title;
@@ -766,7 +775,8 @@ function openPrompter(id){
   paintWords();
   updateModeUI();
   wakeOn();
-  if (settings.camera && camSupported()) enableCamera();
+  // camera is a per-session choice — never auto-enabled
+  if (withCam && camSupported()) enableCamera();
   else updateCamUI();
 }
 
@@ -1261,13 +1271,13 @@ async function enableCamera(){
       audio:true
     });
   }catch(e){
-    settings.camera = false; saveSettings(); updateCamUI();
+    updateCamUI();
     toast('Camera blocked — allow camera and microphone access to record takes.', 4200);
     return;
   }
   micPrimed = true; // the camera grant covers the mic too
   $('camView').srcObject = camStream;
-  camOn = true; settings.camera = true; saveSettings();
+  camOn = true;
   screens.prompt.classList.add('camOn');
   updateCamUI();
   requestAnimationFrame(()=>syncScrollToPos(true));
@@ -1288,7 +1298,7 @@ function updateCamUI(){
 $('camBtn').addEventListener('click', ()=>{
   if (recording){ toast('Finish the take first.'); return; }
   if (playing) setPlaying(false);
-  if (camOn){ settings.camera = false; saveSettings(); disableCamera(); }
+  if (camOn) disableCamera();
   else enableCamera();
 });
 
